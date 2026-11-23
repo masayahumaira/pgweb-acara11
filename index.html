@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <!-- 1. METADATA & STYLING HALAMAN -->
+    <meta charset="utf-8">
+    <title>WebGIS Flores Timur</title>
+
+    <!-- Memuat CSS bawaan Leaflet agar tampilan peta, tombol zoom, dan kontrol layer rapi -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.5.1/dist/leaflet.css">
+
+    <style>
+        /* Menghilangkan margin/padding default browser agar layout presisi */
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Mengatur ukuran kanvas peta agar memenuhi layar penuh dikurangi margin 20px di tiap sisi */
+        #map {
+            height: calc(100vh - 40px);
+            width: calc(100% - 40px);
+            margin: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 2. WADAH (CONTAINER) PETA -->
+    <!-- Elemen div dengan id="map" sebagai tempat Leaflet merender peta -->
+    <div id="map"></div>
+
+    <!-- 3. PEMANGGILAN LIBRARY JAVASCRIPT -->
+    <!-- Library utama Leaflet.js untuk membangun peta interaktif -->
+    <script src="https://unpkg.com/leaflet@1.5.1/dist/leaflet.js"></script>
+    <!-- Plugin L.Geoserver untuk mempermudah pemanggilan layer WMS dan legenda dari GeoServer -->
+    <script src="lib/L.Geoserver.js"></script>
+
+    <script>
+        /* 4. INISIALISASI PETA UTAMA */
+        // Membuat objek peta pada div 'map', diarahkan ke koordinat Flores Timur [-8.33794, 123.12927] dengan level zoom 11
+        var map = L.map('map').setView([-8.33794, 123.12927], 11);
+
+        /* 5. BASEMAP (PETA DASAR) */
+        // Mendefinisikan basemap jalan/umum dari OpenStreetMap
+        var basemap1 = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap'
+        });
+
+        // Mendefinisikan basemap citra satelit dari Esri World Imagery
+        var basemap2 = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Tiles &copy; Esri'
+        });
+
+        // Menampilkan OpenStreetMap sebagai basemap default saat halaman pertama kali dibuka
+        basemap1.addTo(map);
+
+        /* 6. PEMANGGILAN LAYER WMS (GEOSERVER LOKAL & EKSTERNAL) */
+        // Memanggil layer poligon Batas Desa dari GeoServer lokal (localhost:8080)
+        // Parameter transparent: true wajib agar latar layer bening dan tidak menutupi basemap di bawahnya
+        var wmsLayer1 = L.Geoserver.wms("http://localhost:8080/geoserver/wms", {
+            layers: "pgweb:batas_desa_flores_timur",
+            transparent: true,
+        });
+        wmsLayer1.addTo(map);
+
+        // Memanggil layer garis Jaringan Jalan dari GeoServer lokal
+        var wmsLayer2 = L.Geoserver.wms("http://localhost:8080/geoserver/wms", {
+            layers: "pgweb:jalan",
+            transparent: true,
+        });
+        wmsLayer2.addTo(map);
+
+        // Memanggil layer titik Sebaran WiFi secara eksternal (lintas server) dari Geoportal Kota Magelang
+        var wmsLayer3 = L.Geoserver.wms("https://geoportal.magelangkota.go.id/geoserver/wms", {
+            layers: "geonode:wifi",
+            transparent: true,
+        });
+        wmsLayer3.addTo(map);
+
+        /* 7. LEGENDA GABUNGAN (MULTI-SERVER) */
+        // Membuat wadah kontrol legenda di peta menggunakan plugin L.Geoserver
+        var layerLegend = L.Geoserver.legend("http://localhost:8080/geoserver/wms", {
+            layers: "pgweb:batas_desa_flores_timur",
+        });
+        layerLegend.addTo(map);
+
+        // Mengambil elemen HTML legenda lalu menimpa isinya agar memuat simbol dari ketiga layer sekaligus
+        // Menggunakan parameter standar OGC WMS yaitu REQUEST=GetLegendGraphic untuk mengambil gambar simbol
+        var legendEl = layerLegend.getContainer();
+        legendEl.innerHTML =
+            "<b>Legenda</b><hr style='margin: 5px 0;'>" +
+            "<b>Sebaran WiFi (Geoportal)</b><br>" +
+            "<img src='https://geoportal.magelangkota.go.id/geoserver/wms?REQUEST=GetLegendGraphic&VERSION=1.0.0&FORMAT=image/png&LAYER=geonode:wifi'><br><br>" +
+            "<b>Jalan</b><br>" +
+            "<img src='http://localhost:8080/geoserver/wms?REQUEST=GetLegendGraphic&VERSION=1.0.0&FORMAT=image/png&LAYER=pgweb:jalan'><br><br>" +
+            "<b>Batas Desa</b><br>" +
+            "<img src='http://localhost:8080/geoserver/wms?REQUEST=GetLegendGraphic&VERSION=1.0.0&FORMAT=image/png&LAYER=pgweb:batas_desa_flores_timur'>";
+
+        // Mengatur tampilan visual kotak legenda (tinggi maksimal 250px, bisa di-scroll vertikal, latar putih, dan bayangan)
+        legendEl.style.maxHeight = "250px";
+        legendEl.style.overflowY = "auto";
+        legendEl.style.overflowX = "hidden";
+        legendEl.style.background = "white";
+        legendEl.style.padding = "8px 12px";
+        legendEl.style.borderRadius = "6px";
+        legendEl.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.25)";
+
+        // Mencegah peta di belakang ikut ter-zoom atau tergeser saat kursor melakukan scroll/klik di dalam kotak legenda
+        L.DomEvent.disableScrollPropagation(legendEl);
+        L.DomEvent.disableClickPropagation(legendEl);
+
+        /* 8. LAYER CONTROL (PANEL PENGATUR LAYER) */
+        // Mengelompokkan basemap (sifatnya radio button / hanya bisa aktif satu)
+        var baseMaps = {
+            "OpenStreetMap": basemap1,
+            "Esri Imagery": basemap2
+        };
+
+        // Mengelompokkan layer data tematik (sifatnya checkbox / bisa di-toggle nyala-mati secara bebas)
+        var overlayMaps = {
+            "Batas Desa": wmsLayer1,
+            "Jalan": wmsLayer2,
+            "Sebaran WiFi (Geoportal)": wmsLayer3
+        };
+
+        // Menampilkan panel kontrol layer di pojok kanan atas peta
+        var layerControl = L.control.layers(baseMaps, overlayMaps).addTo(map);
+    </script>
+</body>
+
+</html>
